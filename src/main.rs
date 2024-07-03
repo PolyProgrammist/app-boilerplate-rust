@@ -144,13 +144,11 @@ extern "C" fn sample_main() {
     #[cfg(not(any(target_os = "stax", target_os = "flex")))]
     display_pending_review(&mut comm);
 
-    let mut tx_ctx = TxContext::new();
-
     loop {
         // Wait for either a specific button push to exit the app
         // or an APDU command
         if let Event::Command(ins) = ui_menu_main(&mut comm) {
-            match handle_apdu(&mut comm, ins, &mut tx_ctx) {
+            match handle_apdu(&mut comm, ins) {
                 Ok(()) => comm.reply_ok(),
                 Err(sw) => comm.reply(sw),
             }
@@ -158,14 +156,64 @@ extern "C" fn sample_main() {
     }
 }
 
-fn handle_apdu(comm: &mut Comm, ins: Instruction, ctx: &mut TxContext) -> Result<(), AppSW> {
-    match ins {
-        Instruction::GetAppName => {
-            comm.append(env!("CARGO_PKG_NAME").as_bytes());
-            Ok(())
+fn handle_apdu(comm: &mut Comm, ins: Instruction) -> Result<(), AppSW> {
+    let data = comm.get_data().map_err(|_| AppSW::WrongApduLength)?;
+    let x = ui_display_tx()?;
+    Ok(())
+    // match ins {
+    //     Instruction::GetAppName => {
+    //         comm.append(env!("CARGO_PKG_NAME").as_bytes());
+    //         Ok(())
+    //     }
+    //     Instruction::GetVersion => handler_get_version(comm),
+    //     Instruction::GetPubkey { display } => handler_get_public_key(comm, display),
+    //     Instruction::SignTx { chunk, more } => handler_sign_tx(comm, chunk, more, ctx),
+    // }
+}
+
+#[cfg(any(target_os = "stax", target_os = "flex"))]
+use include_gif::include_gif;
+#[cfg(any(target_os = "stax", target_os = "flex"))]
+use ledger_device_sdk::nbgl::{Field, NbglGlyph, NbglReview};
+
+pub fn ui_display_tx() -> Result<bool, AppSW> {
+
+    // Define transaction review fields
+    let my_fields = [
+        Field {
+            name: "Amount",
+            value: "500",
+        },
+        Field {
+            name: "Destination",
+            value: "my_destination",
+        },
+        Field {
+            name: "Memo",
+            value: "exmem",
+        },
+    ];
+
+    #[cfg(any(target_os = "stax", target_os = "flex"))]
+    {
+        // Load glyph from 64x64 4bpp gif file with include_gif macro. Creates an NBGL compatible glyph.
+        const FERRIS: NbglGlyph = NbglGlyph::from_include(include_gif!("crab_64x64.gif", NBGL));
+        // Create NBGL review. Maximum number of fields and string buffer length can be customised
+        // with constant generic parameters of NbglReview. Default values are 32 and 1024 respectively.
+        let mut review: NbglReview = NbglReview::new()
+            .titles(
+                "Review transaction\nto send CRAB",
+                "",
+                "Sign transaction\nto send CRAB",
+            )
+            .glyph(&FERRIS);
+
+        // If first setting switch is disabled do not display the transaction memo
+        let settings: settings::Settings = Default::default();
+        if settings.get_element(0) == 0 {
+            Ok(review.show(&my_fields[0..2]))
+        } else {
+            Ok(review.show(&my_fields))
         }
-        Instruction::GetVersion => handler_get_version(comm),
-        Instruction::GetPubkey { display } => handler_get_public_key(comm, display),
-        Instruction::SignTx { chunk, more } => handler_sign_tx(comm, chunk, more, ctx),
     }
 }
